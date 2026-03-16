@@ -4,6 +4,12 @@ from aiofiles.os import makedirs
 from asyncio import Event
 from mega import MegaApi, MegaListener, MegaRequest, MegaTransfer, MegaError
 
+try:
+    from mega import MegaProxy
+    _MEGA_PROXY_AVAILABLE = True
+except ImportError:
+    _MEGA_PROXY_AVAILABLE = False
+
 from bot import LOGGER, config_dict, download_dict_lock, download_dict, non_queued_dl, queue_dict_lock
 from bot.helper.telegram_helper.message_utils import sendMessage, sendStatusMessage
 from bot.helper.ext_utils.bot_utils import get_mega_link_type, async_to_sync, sync_to_async
@@ -117,13 +123,45 @@ class AsyncExecutor:
         await self.continue_event.wait()
 
 
+def _apply_mega_proxy(api, mega_proxy_url):
+    """Configure proxy settings on a MegaApi instance.
+
+    Uses MegaProxy SDK bindings when available; falls back to the
+    http_proxy / https_proxy environment variables otherwise (libcurl
+    honours these at runtime).  Returns True if any proxy was applied.
+    """
+    if not mega_proxy_url:
+        return False
+    if _MEGA_PROXY_AVAILABLE:
+        proxy = MegaProxy()
+        proxy.setType(MegaProxy.PROXY_CUSTOM)
+        proxy.setURL(mega_proxy_url)
+        api.setProxySettings(proxy)
+    else:
+        from os import environ as _env
+        _env['http_proxy'] = mega_proxy_url
+        _env['https_proxy'] = mega_proxy_url
+        _env['HTTP_PROXY'] = mega_proxy_url
+        _env['HTTPS_PROXY'] = mega_proxy_url
+    return True
+
+
 async def add_mega_download(mega_link, path, listener, name):
     MEGA_EMAIL = config_dict['MEGA_EMAIL']
     MEGA_PASSWORD = config_dict['MEGA_PASSWORD']
+    MEGA_PROXY = config_dict.get('MEGA_PROXY', '')
 
     executor = AsyncExecutor()
     api = MegaApi(None, None, None, 'KPSML-X')
     folder_api = None
+
+    if _apply_mega_proxy(api, MEGA_PROXY):
+        from urllib.parse import urlsplit as _urlsplit
+        _parts = _urlsplit(MEGA_PROXY)
+        LOGGER.info(
+            f"MEGA proxy mode enabled: "
+            f"{_parts.scheme or '?'}://{_parts.hostname or '?'}:{_parts.port or '?'}"
+        )
 
     mega_listener = MegaAppListener(executor.continue_event, listener)
     api.addListener(mega_listener)
@@ -136,6 +174,8 @@ async def add_mega_download(mega_link, path, listener, name):
         node = mega_listener.public_node
     else:
         folder_api = MegaApi(None, None, None, 'KPSML-X')
+        if MEGA_PROXY:
+            _apply_mega_proxy(folder_api, MEGA_PROXY)
         folder_api.addListener(mega_listener)
         await executor.do(folder_api.loginToFolder, (mega_link,))
         node = await sync_to_async(folder_api.authorizeNode, mega_listener.node)
