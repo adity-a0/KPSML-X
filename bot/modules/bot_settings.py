@@ -137,6 +137,8 @@ async def load_config():
         MEGA_EMAIL = ''
         MEGA_PASSWORD = ''
 
+    MEGA_PROXY = environ.get('MEGA_PROXY', '')
+
     METADATA = environ.get('METADATA', '')
     if len(METADATA) == 0:
         METADATA = ''
@@ -665,6 +667,7 @@ async def load_config():
                         'MEDIA_GROUP': MEDIA_GROUP,
                         'MEGA_EMAIL': MEGA_EMAIL,
                         'MEGA_PASSWORD': MEGA_PASSWORD,
+                        'MEGA_PROXY': MEGA_PROXY,
                         'MDL_TEMPLATE': MDL_TEMPLATE,
                         'OWNER_ID': OWNER_ID,
                         'QUEUE_ALL': QUEUE_ALL,

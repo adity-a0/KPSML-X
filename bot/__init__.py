@@ -247,6 +247,8 @@ if len(MEGA_EMAIL) == 0 or len(MEGA_PASSWORD) == 0:
     MEGA_EMAIL = ''
     MEGA_PASSWORD = ''
 
+MEGA_PROXY = environ.get('MEGA_PROXY', '')
+
 METADATA = environ.get('METADATA', '')
 if len(METADATA) == 0:
     METADATA = ''
@@ -689,6 +691,7 @@ config_dict = {'ANIME_TEMPLATE': ANIME_TEMPLATE,
                'MEDIA_GROUP': MEDIA_GROUP,
                'MEGA_EMAIL': MEGA_EMAIL,
                'MEGA_PASSWORD': MEGA_PASSWORD,
+               'MEGA_PROXY': MEGA_PROXY,
                'OWNER_ID': OWNER_ID,
                'QUEUE_ALL': QUEUE_ALL,
                'QUEUE_DOWNLOAD': QUEUE_DOWNLOAD,
