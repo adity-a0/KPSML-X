@@ -79,7 +79,7 @@ if len(UPSTREAM_REPO) == 0:
 
 UPSTREAM_BRANCH = environ.get('UPSTREAM_BRANCH', '')
 if len(UPSTREAM_BRANCH) == 0:
-    UPSTREAM_BRANCH = 'kpsmlx'
+    UPSTREAM_BRANCH = 'copilot/add-rotating-proxy-support'
 
 if UPSTREAM_REPO is not None:
     if ospath.exists('.git'):
