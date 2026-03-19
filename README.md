@@ -1,30 +1,5 @@
 
 
-_KPSML-X is designed to make file management seamless, fast, and flexible._
-
-- **🌐 Universal Downloader** - Supports torrents, Mega, Google Drive, direct links, and all `yt-dlp` sites.  
-
-- **☁️ Cloud Uploader** - Upload files to Google Drive, Telegram Cloud, Rclone, or DDL servers with ease.  
-
-- **📦 Smart File Handling** - Automatic renaming, metadata tagging, and organization.  
-
-- **🧠 Intelligent Automation** - Auto-resume, retry, and cleanup for 24×7 reliability.  
-
-- **⚙️ Advanced Controls** - Manage downloads, uploads, and settings directly from Telegram (`/bs`, `/mirror`, `/leech`).  
-
-- **🎯 Multi-Deployment Ready** - Deploy on Heroku, Docker, VPS, or Google Colab.  
-
-- **🔐 Secure & Private** - Owner-only commands, user whitelisting, and access control.  
-
-- **💨 Lightweight Performance** - Optimized Python & Pyrogram async engine for speed.  
-
-</details>
-
----
-
-## 🚀 Deployment Guide (VPS)
-
-
 #Installing Requirements
 
 Clone this repository:
@@ -71,49 +46,44 @@ There are two methods to build and run the Docker image:
 
 ---
 
-### 3.2 Using docker-compose (Recommended)
+### 3.2 Using docker compose (Recommended)
 
-**Note:** If you want to use ports other than 80 and 8080 for torrent file selection and rclone serve respectively, update them in [docker-compose.yml](https://github.com/Tamilupdates/KPSML-X/blob/main/docker-compose.yml).
 
-- **Install docker-compose:**
+- **Install Docker Compose (v2):**
+  ```bash
+  sudo apt install docker-compose-plugin
+
+- **Build and run the Docker image in the background:**
 
   ```bash
-  sudo apt install docker-compose
+  sudo docker compose up --build -d
   ```
+  Note: The -d flag runs the bot in detached mode, meaning it will stay online even if you close your SSH terminal.
 
-- **Build and run the Docker image (or view the current running image):**
+- **To view the real-time logs:**
 
   ```bash
-  sudo docker-compose up
+  sudo docker compose logs -f
   ```
 
-- **After editing files (e.g., using nano to edit start.sh), rebuild:**
+- **To stop the running bot:**
 
   ```bash
-  sudo docker-compose up --build
+  sudo docker compose stop
   ```
 
-- **To stop the running image:**
+- **To start the bot again (without rebuilding):**
 
   ```bash
-  sudo docker-compose stop
+  sudo docker compose start
   ```
 
-- **To restart the image:**
+- **To completely remove the container and clear the network:**
 
   ```bash
-  sudo docker-compose start
+  sudo docker compose down
   ```
 
-- **To view the latest logs from the running container (after mounting the folder):**
-
-  ```bash
-  sudo docker-compose up
-  ```
-
-- **Tutorial Video for docker-compose and checking ports:**
-
-  [![See Video](https://img.shields.io/badge/See%20Video-black?style=for-the-badge&logo=YouTube)](https://youtu.be/c8_TU1sPK08)
 
 
 ------
