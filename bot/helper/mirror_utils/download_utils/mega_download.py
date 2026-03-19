@@ -66,12 +66,9 @@ class MegaAppListener(MegaListener):
 
     def onRequestTemporaryError(self, api, request, error: MegaError):
         LOGGER.error(f'Mega Request error in {error}')
-        if not self.is_cancelled:
-            self.is_cancelled = True
-            async_to_sync(self.listener.onDownloadError,
-                          f"RequestTempError: {error.toString()}")
-        self.error = error.toString()
-        self.continue_event.set()
+        # Temporary error; MEGA SDK retries the request internally.
+        # onRequestFinish will be called with the final outcome – do NOT
+        # cancel the download or set the continue_event here.
 
     def onTransferUpdate(self, api: MegaApi, transfer: MegaTransfer):
         if self.is_cancelled:
@@ -179,31 +176,63 @@ async def add_mega_download(mega_link, path, listener, name):
     api = MegaApi(None, None, None, 'KPSML-X')
     folder_api = None
 
-    if current_proxy and _apply_mega_proxy(api, current_proxy):
-        LOGGER.info(f"MEGA proxy mode enabled: {current_proxy}")
+    # --- Login / fetch-nodes phase with per-proxy retry ---
+    while True:
+        if current_proxy and _apply_mega_proxy(api, current_proxy):
+            LOGGER.info(f"MEGA proxy mode enabled: {current_proxy}")
 
-    mega_listener = MegaAppListener(executor.continue_event, listener)
-    api.addListener(mega_listener)
+        mega_listener = MegaAppListener(executor.continue_event, listener)
+        api.addListener(mega_listener)
 
-    if MEGA_EMAIL and MEGA_PASSWORD:
-        await executor.do(api.login, (MEGA_EMAIL, MEGA_PASSWORD))
+        if MEGA_EMAIL and MEGA_PASSWORD:
+            await executor.do(api.login, (MEGA_EMAIL, MEGA_PASSWORD))
 
-    if get_mega_link_type(mega_link) == "file":
-        await executor.do(api.getPublicNode, (mega_link,))
-        node = mega_listener.public_node
-    else:
-        folder_api = MegaApi(None, None, None, 'KPSML-X')
-        if current_proxy:
-            _apply_mega_proxy(folder_api, current_proxy)
-        folder_api.addListener(mega_listener)
-        await executor.do(folder_api.loginToFolder, (mega_link,))
-        node = await sync_to_async(folder_api.authorizeNode, mega_listener.node)
-    if mega_listener.error is not None:
-        await sendMessage(listener.message, str(mega_listener.error))
-        await executor.do(api.logout, ())
-        if folder_api is not None:
-            await executor.do(folder_api.logout, ())
-        return
+        if get_mega_link_type(mega_link) == "file":
+            await executor.do(api.getPublicNode, (mega_link,))
+            node = mega_listener.public_node
+        else:
+            folder_api = MegaApi(None, None, None, 'KPSML-X')
+            if current_proxy:
+                _apply_mega_proxy(folder_api, current_proxy)
+            folder_api.addListener(mega_listener)
+            await executor.do(folder_api.loginToFolder, (mega_link,))
+            # Guard against authorizeNode(None) when login failed
+            node = (
+                await sync_to_async(folder_api.authorizeNode, mega_listener.node)
+                if mega_listener.error is None and mega_listener.node is not None else None
+            )
+
+        if mega_listener.error is not None:
+            # Login/fetch failed – try the next proxy if one is available.
+            if current_proxy:
+                tried_proxies.add(current_proxy)
+            remaining = [p for p in proxy_list if p not in tried_proxies]
+            if remaining:
+                current_proxy = random_choice(remaining)
+                LOGGER.warning(
+                    f"Mega login failed ({mega_listener.error}), "
+                    f"rotating to next proxy: {current_proxy}"
+                )
+                # Clean up the failed session before retrying.
+                await executor.do(api.logout, ())
+                api.removeListener(mega_listener)
+                if folder_api is not None:
+                    await executor.do(folder_api.logout, ())
+                    folder_api.removeListener(mega_listener)
+                    folder_api = None
+                # Fresh executor / API object for the next attempt.
+                executor = AsyncExecutor()
+                api = MegaApi(None, None, None, 'KPSML-X')
+                continue
+
+            # All proxies exhausted – report the error and bail out.
+            await sendMessage(listener.message, str(mega_listener.error))
+            await executor.do(api.logout, ())
+            if folder_api is not None:
+                await executor.do(folder_api.logout, ())
+            return
+
+        break  # Login / fetch succeeded
 
     name = name or node.getName()
     msg, button = await stop_duplicate_check(name, listener)
