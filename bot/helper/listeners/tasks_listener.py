@@ -188,8 +188,14 @@ class MirrorLeechListener:
             except Exception as e:
                 await self.onUploadError(str(e))
                 return
+            if not files:
+                await self.onUploadError(f"Downloaded file not found in destination directory: {self.dir}")
+                return
             name = files[-1]
             if name == "yt-dlp-thumb":
+                if len(files) < 2:
+                    await self.onUploadError(f"No download found, only thumbnail file present in: {self.dir}")
+                    return
                 name = files[0]
 
         dl_path = f"{self.dir}/{name}"
