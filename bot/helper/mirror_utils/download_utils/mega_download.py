@@ -45,6 +45,14 @@ class MegaAppListener(MegaListener):
         # after the task has already been cleaned up, causing a KeyError on
         # download_dict[uid].  Reset to False on each proxy-rotation retry.
         self._download_done = False
+        # Guard flag set while api.startDownload is running.  Stale
+        # onRequestFinish callbacks from a previous proxy session's requests
+        # can fire during this window and prematurely unblock executor.do()
+        # (setting continue_event + mega_listener.error) before any transfer
+        # bytes arrive, causing a silent bad-state exit.  While this flag is
+        # True we drop request-level callbacks so the download lifecycle is
+        # driven solely by transfer callbacks and the stall watchdog.
+        self._in_download_phase = False
         super().__init__()
 
     @property
@@ -57,6 +65,18 @@ class MegaAppListener(MegaListener):
 
     def onRequestFinish(self, api, request, error):
         if str(error).lower() != "no error":
+            # If a download is in progress, this is most likely a stale request
+            # callback from the previous proxy session's cleanup (e.g. a
+            # getPublicNode or login request that completed after we already
+            # rotated to a new proxy and called api.startDownload).  Letting it
+            # through would overwrite mega_listener.error and set continue_event,
+            # prematurely unblocking executor.do(api.startDownload) with a bad
+            # state and causing the "Task was destroyed but it is pending!" warning.
+            if self._in_download_phase:
+                LOGGER.warning(
+                    f"Ignoring stale request error during download phase: {error}"
+                )
+                return
             self.error = error.copy()
             LOGGER.error(f'Mega onRequestFinishError: {self.error}')
             self.continue_event.set()
@@ -174,7 +194,7 @@ _STALL_CHECK   = 10        # polling interval in seconds
 # to very low speeds.  The transfer makes tiny progress each interval so the
 # zero-progress check never fires.  Detect this separately.
 _SLOW_SPEED_THRESHOLD = 10 * 1024   # bytes/s – below this is "throttled"
-_SLOW_SPEED_TIMEOUT   = 300         # seconds of sustained low speed before stalling
+_SLOW_SPEED_TIMEOUT   = 5 * 60      # seconds (5 min) of sustained low speed before stalling
 
 
 async def _stall_watchdog(mega_listener, api, timeout=_STALL_TIMEOUT, interval=_STALL_CHECK):
@@ -419,19 +439,39 @@ async def add_mega_download(mega_link, path, listener, name):
             mega_listener.is_stalled = False
             mega_listener.error = None
             mega_listener._download_done = False
+            mega_listener._in_download_phase = False
 
             # Run the stall watchdog concurrently with the download so that a
             # proxy bandwidth exhaustion (which stalls silently) is detected and
             # handled via the same proxy-rotation path as quota errors.
             watchdog = create_task(_stall_watchdog(mega_listener, api))
             try:
+                mega_listener._in_download_phase = True
                 await executor.do(api.startDownload, (node, path, name, None, False, None))
             finally:
+                mega_listener._in_download_phase = False
                 watchdog.cancel()
                 try:
                     await watchdog
                 except CancelledError:
                     pass
+
+            # Safety net: if a request-level error arrived while we were waiting
+            # for startDownload (and wasn't suppressed by _in_download_phase –
+            # which guards the common stale-callback case), the download never
+            # actually started.  Report it so the user gets a message instead of
+            # a silent bad-state exit that leaves the download in download_dict.
+            if mega_listener.error is not None and not mega_listener.is_quota_error and not mega_listener.is_cancelled:
+                LOGGER.error(
+                    f"Unexpected request error during MEGA download phase: {mega_listener.error}"
+                )
+                await listener.onDownloadError(
+                    f"Mega download error: {mega_listener.error}"
+                )
+                await executor.do(api.logout, ())
+                if folder_api is not None:
+                    await executor.do(folder_api.logout, ())
+                return
 
             if mega_listener.is_quota_error:
                 if current_proxy:
