@@ -168,7 +168,7 @@ if DEFAULT_UPLOAD != 'rc' and DEFAULT_UPLOAD != 'ddl':
 
 DOWNLOAD_DIR = environ.get('DOWNLOAD_DIR', '')
 if len(DOWNLOAD_DIR) == 0:
-    DOWNLOAD_DIR = '/usr/src/app/downloads/'
+    DOWNLOAD_DIR = '/ssd/kpsml-x/downloads/'
 elif not DOWNLOAD_DIR.endswith("/"):
     DOWNLOAD_DIR = f'{DOWNLOAD_DIR}/'
 
