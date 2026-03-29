@@ -176,12 +176,24 @@ def get_all_versions():
             vpy = get_distribution('pyrofork').version
         except DistributionNotFound:
             vpy = "2.xx.xx"
+    try:
+        va = aria2.client.get_version()['version']
+    except Exception:
+        va = 'N/A'
+    try:
+        vm = MegaApi('test').getVersion()
+    except Exception:
+        vm = 'N/A'
+    try:
+        vq = get_client().app.version
+    except Exception:
+        vq = 'N/A'
     bot_cache['eng_versions'] = {'p7zip':vp, 'ffmpeg': vf, 'rclone': vr,
-                                    'aria': aria2.client.get_version()['version'],
+                                    'aria': va,
                                     'aiohttp': get_distribution('aiohttp').version,
                                     'gapi': get_distribution('google-api-python-client').version,
-                                    'mega': MegaApi('test').getVersion(),
-                                    'qbit': get_client().app.version,
+                                    'mega': vm,
+                                    'qbit': vq,
                                     'pyro': vpy,
                                     'ytdlp': get_distribution('yt-dlp').version}
 

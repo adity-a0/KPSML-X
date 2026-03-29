@@ -11,7 +11,7 @@ try:
 except ImportError:
     _MEGA_PROXY_AVAILABLE = False
 
-from bot import LOGGER, config_dict, download_dict_lock, download_dict, non_queued_dl, queue_dict_lock
+from bot import LOGGER, config_dict, download_dict_lock, download_dict, non_queued_dl, queue_dict_lock, mega_proxy_list
 from bot.helper.telegram_helper.message_utils import sendMessage, sendStatusMessage
 from bot.helper.ext_utils.bot_utils import get_mega_link_type, async_to_sync, sync_to_async
 from bot.helper.mirror_utils.status_utils.mega_download_status import MegaDownloadStatus
@@ -45,6 +45,14 @@ class MegaAppListener(MegaListener):
         # after the task has already been cleaned up, causing a KeyError on
         # download_dict[uid].  Reset to False on each proxy-rotation retry.
         self._download_done = False
+        # Guard flag set while api.startDownload is running.  Stale
+        # onRequestFinish callbacks from a previous proxy session's requests
+        # can fire during this window and prematurely unblock executor.do()
+        # (setting continue_event + mega_listener.error) before any transfer
+        # bytes arrive, causing a silent bad-state exit.  While this flag is
+        # True we drop request-level callbacks so the download lifecycle is
+        # driven solely by transfer callbacks and the stall watchdog.
+        self._in_download_phase = False
         super().__init__()
 
     @property
@@ -57,6 +65,18 @@ class MegaAppListener(MegaListener):
 
     def onRequestFinish(self, api, request, error):
         if str(error).lower() != "no error":
+            # If a download is in progress, this is most likely a stale request
+            # callback from the previous proxy session's cleanup (e.g. a
+            # getPublicNode or login request that completed after we already
+            # rotated to a new proxy and called api.startDownload).  Letting it
+            # through would overwrite mega_listener.error and set continue_event,
+            # prematurely unblocking executor.do(api.startDownload) with a bad
+            # state and causing the "Task was destroyed but it is pending!" warning.
+            if self._in_download_phase:
+                LOGGER.warning(
+                    f"Ignoring stale request error during download phase: {error}"
+                )
+                return
             self.error = error.copy()
             LOGGER.error(f'Mega onRequestFinishError: {self.error}')
             self.continue_event.set()
@@ -168,22 +188,29 @@ class AsyncExecutor:
 
 
 # Stall detection: rotate proxy when download makes no progress for this long.
-_STALL_TIMEOUT = 60    # seconds of zero progress before treating as a stall
-_STALL_CHECK   = 10    # polling interval in seconds
+_STALL_TIMEOUT = 60        # seconds of zero progress before treating as a stall
+_STALL_CHECK   = 10        # polling interval in seconds
+# Slow-speed detection: MEGA throttles connections (especially without a proxy)
+# to very low speeds.  The transfer makes tiny progress each interval so the
+# zero-progress check never fires.  Detect this separately.
+_SLOW_SPEED_THRESHOLD = 10 * 1024   # bytes/s – below this is "throttled"
+_SLOW_SPEED_TIMEOUT   = 5 * 60      # seconds (5 min) of sustained low speed before stalling
 
 
 async def _stall_watchdog(mega_listener, api, timeout=_STALL_TIMEOUT, interval=_STALL_CHECK):
-    """Detect mid-transfer proxy bandwidth stalls and trigger proxy rotation.
+    """Detect mid-transfer stalls and trigger proxy rotation / error reporting.
 
-    When the proxy hits its bandwidth cap the TCP connection stays open but no
-    data flows.  The MEGA SDK never fires a quota error in this case – it just
-    waits indefinitely.  This watchdog polls `downloaded_bytes` every
-    `interval` seconds and, if there has been no progress for `timeout`
-    seconds, marks the transfer as a quota/stall error so the outer loop can
-    rotate to the next proxy.
+    Two conditions are caught:
+    1. Zero-progress stall – the TCP connection is open but no bytes arrive
+       (proxy bandwidth cap).  Triggers after `timeout` seconds.
+    2. Sustained low-speed – MEGA throttles the connection (common when no
+       proxy is configured) so bytes trickle in below `_SLOW_SPEED_THRESHOLD`
+       B/s.  The zero-progress check would never fire because bytes do change;
+       this guard triggers after `_SLOW_SPEED_TIMEOUT` seconds.
     """
     last_bytes = None
     stall_elapsed = 0
+    slow_elapsed = 0
     while not mega_listener.is_cancelled:
         await sleep(interval)
         if mega_listener.is_cancelled:
@@ -193,24 +220,40 @@ async def _stall_watchdog(mega_listener, api, timeout=_STALL_TIMEOUT, interval=_
             # First observation – just record the baseline.
             last_bytes = current_bytes
             continue
-        if current_bytes == last_bytes:
+        delta = current_bytes - last_bytes
+        if delta == 0:
+            # Absolutely no progress: use the fast (zero-progress) timeout.
             stall_elapsed += interval
+            slow_elapsed = 0
             if stall_elapsed >= timeout:
                 LOGGER.warning(
                     f"MEGA download stalled for {stall_elapsed}s "
-                    f"(proxy bandwidth limit?), triggering proxy rotation"
+                    f"(zero progress – proxy bandwidth limit?), triggering stall handler"
                 )
                 mega_listener.is_stalled = True
                 mega_listener.is_quota_error = True
                 mega_listener.is_cancelled = True
-                # Immediately unblock the executor.  onTransferUpdate also sets
-                # is_cancelled=True and calls api.cancelTransfer on its next
-                # invocation (MEGA SDK timer), but we don't wait for that.
                 mega_listener.continue_event.set()
                 break
         else:
-            stall_elapsed = 0
+            effective_speed = delta / interval  # bytes/s over this interval
             last_bytes = current_bytes
+            stall_elapsed = 0
+            if effective_speed < _SLOW_SPEED_THRESHOLD:
+                # Some progress, but extremely slow (MEGA throttling).
+                slow_elapsed += interval
+                if slow_elapsed >= _SLOW_SPEED_TIMEOUT:
+                    LOGGER.warning(
+                        f"MEGA download throttled below {_SLOW_SPEED_THRESHOLD // 1024} KB/s "
+                        f"for {slow_elapsed}s (MEGA IP throttling?), triggering stall handler"
+                    )
+                    mega_listener.is_stalled = True
+                    mega_listener.is_quota_error = True
+                    mega_listener.is_cancelled = True
+                    mega_listener.continue_event.set()
+                    break
+            else:
+                slow_elapsed = 0
 
 
 def _apply_mega_proxy(api, mega_proxy_url):
@@ -247,13 +290,10 @@ def _apply_mega_proxy(api, mega_proxy_url):
 async def add_mega_download(mega_link, path, listener, name):
     MEGA_EMAIL = config_dict['MEGA_EMAIL']
     MEGA_PASSWORD = config_dict['MEGA_PASSWORD']
-    MEGA_PROXY_RAW = config_dict.get('MEGA_PROXY', '')
 
-    # Support comma-separated list of proxies; each is tried in turn on quota errors.
-    proxy_list = (
-        [p.strip() for p in MEGA_PROXY_RAW.split(',') if p.strip()]
-        if MEGA_PROXY_RAW.strip() else []
-    )
+    # Read proxy list from mega_proxy.txt (one proxy per line); a snapshot is
+    # taken here so that file reloads during the download don't cause issues.
+    proxy_list = list(mega_proxy_list)
     tried_proxies: set = set()
     current_proxy = random_choice(proxy_list) if proxy_list else ''
 
@@ -396,19 +436,39 @@ async def add_mega_download(mega_link, path, listener, name):
             mega_listener.is_stalled = False
             mega_listener.error = None
             mega_listener._download_done = False
+            mega_listener._in_download_phase = False
 
             # Run the stall watchdog concurrently with the download so that a
             # proxy bandwidth exhaustion (which stalls silently) is detected and
             # handled via the same proxy-rotation path as quota errors.
             watchdog = create_task(_stall_watchdog(mega_listener, api))
             try:
+                mega_listener._in_download_phase = True
                 await executor.do(api.startDownload, (node, path, name, None, False, None))
             finally:
+                mega_listener._in_download_phase = False
                 watchdog.cancel()
                 try:
                     await watchdog
                 except CancelledError:
                     pass
+
+            # Safety net: if a request-level error arrived while we were waiting
+            # for startDownload (and wasn't suppressed by _in_download_phase –
+            # which guards the common stale-callback case), the download never
+            # actually started.  Report it so the user gets a message instead of
+            # a silent bad-state exit that leaves the download in download_dict.
+            if mega_listener.error is not None and not mega_listener.is_quota_error and not mega_listener.is_cancelled:
+                LOGGER.error(
+                    f"Unexpected request error during MEGA download phase: {mega_listener.error}"
+                )
+                await listener.onDownloadError(
+                    f"Mega download error: {mega_listener.error}"
+                )
+                await executor.do(api.logout, ())
+                if folder_api is not None:
+                    await executor.do(folder_api.logout, ())
+                return
 
             if mega_listener.is_quota_error:
                 if current_proxy:
@@ -427,8 +487,25 @@ async def add_mega_download(mega_link, path, listener, name):
                     # callbacks from the cancelled transfer are silently ignored.
                     mega_listener._dl_gen += 1
                     continue
-                LOGGER.error("Quota exceeded / stalled on all available proxies")
-                await listener.onDownloadError("Mega download failed: Over quota or stalled on all proxies")
+                if not proxy_list:
+                    if mega_listener.is_stalled:
+                        LOGGER.error(
+                            "MEGA download throttled/stalled with no proxy configured. "
+                            "Add proxies to mega_proxy.txt to avoid MEGA IP throttling."
+                        )
+                        await listener.onDownloadError(
+                            "Mega download failed: MEGA is throttling this IP. "
+                            "Add proxies to mega_proxy.txt to use a proxy."
+                        )
+                    else:
+                        LOGGER.error("MEGA quota exceeded with no proxy configured")
+                        await listener.onDownloadError(
+                            "Mega download failed: Over quota. "
+                            "Add proxies to mega_proxy.txt to use a proxy."
+                        )
+                else:
+                    LOGGER.error("Quota exceeded / stalled on all available proxies")
+                    await listener.onDownloadError("Mega download failed: Over quota or stalled on all proxies")
                 await executor.do(api.logout, ())
                 if folder_api is not None:
                     await executor.do(folder_api.logout, ())

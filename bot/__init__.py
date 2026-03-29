@@ -247,7 +247,11 @@ if len(MEGA_EMAIL) == 0 or len(MEGA_PASSWORD) == 0:
     MEGA_EMAIL = ''
     MEGA_PASSWORD = ''
 
-MEGA_PROXY = environ.get('MEGA_PROXY', '')
+if ospath.exists('mega_proxy.txt'):
+    with open('mega_proxy.txt', encoding='utf-8') as _mf:
+        mega_proxy_list = [l.strip() for l in _mf if l.strip()]
+else:
+    mega_proxy_list = []
 
 METADATA = environ.get('METADATA', '')
 if len(METADATA) == 0:
@@ -691,7 +695,6 @@ config_dict = {'ANIME_TEMPLATE': ANIME_TEMPLATE,
                'MEDIA_GROUP': MEDIA_GROUP,
                'MEGA_EMAIL': MEGA_EMAIL,
                'MEGA_PASSWORD': MEGA_PASSWORD,
-               'MEGA_PROXY': MEGA_PROXY,
                'OWNER_ID': OWNER_ID,
                'QUEUE_ALL': QUEUE_ALL,
                'QUEUE_DOWNLOAD': QUEUE_DOWNLOAD,

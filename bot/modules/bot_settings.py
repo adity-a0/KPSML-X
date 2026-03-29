@@ -14,7 +14,7 @@ from time import time
 from io import BytesIO
 from aioshutil import rmtree as aiormtree
 
-from bot import config_dict, user_data, DATABASE_URL, MAX_SPLIT_SIZE, list_drives_dict, categories_dict, aria2, GLOBAL_EXTENSION_FILTER, status_reply_dict_lock, Interval, aria2_options, aria2c_global, IS_PREMIUM_USER, download_dict, qbit_options, get_client, LOGGER, bot, extra_buttons, shorteners_list
+from bot import config_dict, user_data, DATABASE_URL, MAX_SPLIT_SIZE, list_drives_dict, categories_dict, aria2, GLOBAL_EXTENSION_FILTER, status_reply_dict_lock, Interval, aria2_options, aria2c_global, IS_PREMIUM_USER, download_dict, qbit_options, get_client, LOGGER, bot, extra_buttons, shorteners_list, mega_proxy_list
 from bot.helper.telegram_helper.message_utils import sendMessage, sendFile, editMessage, deleteMessage, update_all_messages
 from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.bot_commands import BotCommands
@@ -136,8 +136,6 @@ async def load_config():
     if len(MEGA_EMAIL) == 0 or len(MEGA_PASSWORD) == 0:
         MEGA_EMAIL = ''
         MEGA_PASSWORD = ''
-
-    MEGA_PROXY = environ.get('MEGA_PROXY', '')
 
     METADATA = environ.get('METADATA', '')
     if len(METADATA) == 0:
@@ -667,7 +665,6 @@ async def load_config():
                         'MEDIA_GROUP': MEDIA_GROUP,
                         'MEGA_EMAIL': MEGA_EMAIL,
                         'MEGA_PASSWORD': MEGA_PASSWORD,
-                        'MEGA_PROXY': MEGA_PROXY,
                         'MDL_TEMPLATE': MDL_TEMPLATE,
                         'OWNER_ID': OWNER_ID,
                         'QUEUE_ALL': QUEUE_ALL,
@@ -737,7 +734,7 @@ async def get_buttons(key=None, edit_type=None, edit_mode=None, mess=None):
         buttons.ibutton('Close', "botset close")
         msg = '''<u>Send any of these private files:</u>
         
-<code>config.env, token.pickle, accounts.zip, list_drives.txt, categories.txt, shorteners.txt, cookies.txt, terabox.txt, .netrc or any other file!</code>
+<code>config.env, token.pickle, accounts.zip, list_drives.txt, categories.txt, shorteners.txt, mega_proxy.txt, cookies.txt, terabox.txt, .netrc or any other file!</code>
 
 <i>To delete private file send only the file name as text message with or without extension.</i>
 <b>NOTE:</b> Changing .netrc will not take effect for aria2c until restart.
@@ -971,6 +968,8 @@ async def update_private_file(_, message, pre_message):
                 list_drives_dict['Main'] = {"drive_id": GDRIVE_ID, "index_link": config_dict['INDEX_URL']}
         elif file_name in ['shorteners.txt', 'shorteners']:
             shorteners_list.clear()
+        elif file_name in ['mega_proxy.txt', 'mega_proxy']:
+            mega_proxy_list.clear()
         await deleteMessage(message)
     elif doc := message.document:
         file_name = doc.file_name
@@ -1025,6 +1024,14 @@ async def update_private_file(_, message, pre_message):
                     temp = line.strip().split()
                     if len(temp) == 2:
                         shorteners_list.append({'domain': temp[0],'api_key': temp[1]})
+        elif file_name == 'mega_proxy.txt':
+            mega_proxy_list.clear()
+            async with aiopen('mega_proxy.txt', 'r') as f:
+                lines = await f.readlines()
+                for line in lines:
+                    proxy = line.strip()
+                    if proxy:
+                        mega_proxy_list.append(proxy)
         elif file_name in ['.netrc', 'netrc']:
             if file_name == 'netrc':
                 await rename('netrc', '.netrc')
