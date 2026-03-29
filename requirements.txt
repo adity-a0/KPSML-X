@@ -30,7 +30,6 @@ pillow
 psutil
 pybase64
 pycountry
-pymediainfo>=6.1.0
 pymongo
 pyrofork==2.2.11
 python-dotenv
