@@ -11,7 +11,7 @@ try:
 except ImportError:
     _MEGA_PROXY_AVAILABLE = False
 
-from bot import LOGGER, config_dict, download_dict_lock, download_dict, non_queued_dl, queue_dict_lock
+from bot import LOGGER, config_dict, download_dict_lock, download_dict, non_queued_dl, queue_dict_lock, mega_proxy_list
 from bot.helper.telegram_helper.message_utils import sendMessage, sendStatusMessage
 from bot.helper.ext_utils.bot_utils import get_mega_link_type, async_to_sync, sync_to_async
 from bot.helper.mirror_utils.status_utils.mega_download_status import MegaDownloadStatus
@@ -290,13 +290,10 @@ def _apply_mega_proxy(api, mega_proxy_url):
 async def add_mega_download(mega_link, path, listener, name):
     MEGA_EMAIL = config_dict['MEGA_EMAIL']
     MEGA_PASSWORD = config_dict['MEGA_PASSWORD']
-    MEGA_PROXY_RAW = config_dict.get('MEGA_PROXY', '')
 
-    # Support comma-separated list of proxies; each is tried in turn on quota errors.
-    proxy_list = (
-        [p.strip() for p in MEGA_PROXY_RAW.split(',') if p.strip()]
-        if MEGA_PROXY_RAW.strip() else []
-    )
+    # Read proxy list from mega_proxy.txt (one proxy per line); a snapshot is
+    # taken here so that file reloads during the download don't cause issues.
+    proxy_list = list(mega_proxy_list)
     tried_proxies: set = set()
     current_proxy = random_choice(proxy_list) if proxy_list else ''
 
@@ -494,17 +491,17 @@ async def add_mega_download(mega_link, path, listener, name):
                     if mega_listener.is_stalled:
                         LOGGER.error(
                             "MEGA download throttled/stalled with no proxy configured. "
-                            "Set MEGA_PROXY to route through a proxy and avoid MEGA IP throttling."
+                            "Add proxies to mega_proxy.txt to avoid MEGA IP throttling."
                         )
                         await listener.onDownloadError(
                             "Mega download failed: MEGA is throttling this IP. "
-                            "Configure MEGA_PROXY to use a proxy."
+                            "Add proxies to mega_proxy.txt to use a proxy."
                         )
                     else:
                         LOGGER.error("MEGA quota exceeded with no proxy configured")
                         await listener.onDownloadError(
                             "Mega download failed: Over quota. "
-                            "Configure MEGA_PROXY to use a proxy."
+                            "Add proxies to mega_proxy.txt to use a proxy."
                         )
                 else:
                     LOGGER.error("Quota exceeded / stalled on all available proxies")
