@@ -171,7 +171,7 @@ def direct_link_generator(link):
         return wetransfer(link)
     elif any(x in domain for x in anonfilesBaseSites):
         raise DirectDownloadLinkException('ERROR: R.I.P Anon Sites!')
-    elif any(x in domain for x in ['terabox.com', 'nephobox.com', '4funbox.com', 'mirrobox.com', 'momerybox.com', 'teraboxapp.com', '1024tera.com', '1024terabox.com']):
+    elif any(x in domain for x in ['terabox.com', 'nephobox.com', '4funbox.com', 'mirrobox.com', 'momerybox.com', 'teraboxapp.com', '1024tera.com']):
         return terabox(link)
     elif any(x in domain for x in fmed_list):
         return fembed(link)
@@ -586,100 +586,86 @@ def uploadee(url):
         raise DirectDownloadLinkException("ERROR: Direct Link not found")
 
 def terabox(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-        "Referer": "https://terabox.hnn.workers.dev/",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
+    if not path.isfile('terabox.txt'):
+        raise DirectDownloadLinkException("ERROR: terabox.txt not found")
+    try:
+        jar = MozillaCookieJar('terabox.txt')
+        jar.load()
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+    cookies = {}
+    for cookie in jar:
+        cookies[cookie.name] = cookie.value
+    details = {'contents':[], 'title': '', 'total_size': 0}
+    details["header"] = ' '.join(f'{key}: {value}' for key, value in cookies.items())
 
-    # Extract shorturl from the TeraBox URL
-    shorturl = None
-    s_match = search(r's/([^/?&]+)', url)
-    if s_match:
-        shorturl = s_match.group(1)
-    else:
-        surl_match = search(r'surl=([^/?&]+)', url)
-        if surl_match:
-            shorturl = surl_match.group(1)
+    def __fetch_links(session, dir_='', folderPath=''):
+        params = {
+            'app_id': '250528',
+            'jsToken': jsToken,
+            'shorturl': shortUrl
+            }
+        if dir_:
+            params['dir'] = dir_
+        else:
+            params['root'] = '1'
+        try:
+            _json = session.get("https://www.1024tera.com/share/list", params=params, cookies=cookies).json()
+        except Exception as e:
+            raise DirectDownloadLinkException(f'ERROR: {e.__class__.__name__}')
+        if _json['errno'] not in [0, '0']:
+            if 'errmsg' in _json:
+                raise DirectDownloadLinkException(f"ERROR: {_json['errmsg']}")
+            else:
+                raise DirectDownloadLinkException('ERROR: Something went wrong!')
 
-    if not shorturl:
-        raise DirectDownloadLinkException(f"ERROR: Could not extract shorturl from {url}")
+        if "list" not in _json:
+            return
+        contents = _json["list"]
+        for content in contents:
+            if content['isdir'] in ['1', 1]:
+                if not folderPath:
+                    if not details['title']:
+                        details['title'] = content['server_filename']
+                        newFolderPath = path.join(details['title'])
+                    else:
+                        newFolderPath = path.join(details['title'], content['server_filename'])
+                else:
+                    newFolderPath = path.join(folderPath, content['server_filename'])
+                __fetch_links(session, content['path'], newFolderPath)
+            else:
+                if not folderPath:
+                    if not details['title']:
+                        details['title'] = content['server_filename']
+                    folderPath = details['title']
+                item = {
+                    'url': content['dlink'],
+                    'filename': content['server_filename'],
+                    'path' : path.join(folderPath),
+                }
+                if 'size' in content:
+                    size = content["size"]
+                    if isinstance(size, str) and size.isdigit():
+                        size = float(size)
+                    details['total_size'] += size
+                details['contents'].append(item)
 
     with Session() as session:
-        # Some links need a '1' prefix; try both variants
-        urls_to_try = [shorturl]
-        if not shorturl.startswith('1'):
-            urls_to_try.append('1' + shorturl)
-
-        data = None
-        for current_shorturl in urls_to_try:
-            info_url = f"https://terabox.hnn.workers.dev/api/get-info-new?shorturl={current_shorturl}&pwd="
-            try:
-                info_resp = session.get(info_url, headers=headers, timeout=15)
-                if info_resp.status_code == 200:
-                    temp_data = info_resp.json()
-                    if temp_data.get("ok") and temp_data.get("list"):
-                        data = temp_data
-                        break
-            except Exception as e:
-                LOGGER.warning(f"TeraBox info API error for shorturl={current_shorturl}: {e}")
-                continue
-
-        if not data:
-            raise DirectDownloadLinkException("ERROR: Could not fetch file info from TeraBox")
-
-        file_list = data.get("list", [])
-        if not file_list:
-            raise DirectDownloadLinkException("ERROR: No files found in TeraBox link")
-
-        details = {'contents': [], 'title': '', 'total_size': 0}
-        details['header'] = f"User-Agent: {headers['User-Agent']}"
-
-        for file_info in file_list:
-            payload = {
-                "shareid": data["shareid"],
-                "uk": data["uk"],
-                "sign": data["sign"],
-                "timestamp": data["timestamp"],
-                "fs_id": file_info["fs_id"],
-            }
-            try:
-                dl_resp = session.post(
-                    "https://terabox.hnn.workers.dev/api/get-downloadp",
-                    headers=headers,
-                    json=payload,
-                    timeout=15,
-                )
-                if dl_resp.status_code != 200:
-                    continue
-                result = dl_resp.json()
-                if not result.get("ok"):
-                    continue
-                download_link = result.get("downloadLink", "")
-                expires = result.get("Expires")
-                key_name = result.get("KeyName")
-                signature = result.get("Signature")
-                if expires and key_name and signature and "Expires=" not in download_link:
-                    download_link += f"&Expires={expires}&KeyName={key_name}&Signature={signature}"
-                if not details['title']:
-                    details['title'] = file_info.get('filename', 'TeraBox File')
-                size = file_info.get('size', 0)
-                if isinstance(size, str) and size.isdigit():
-                    size = float(size)
-                details['total_size'] += size
-                details['contents'].append({
-                    'url': download_link,
-                    'filename': file_info.get('filename', ''),
-                    'path': details['title'],
-                })
-            except Exception as e:
-                LOGGER.warning(f"TeraBox download API error for fs_id={file_info.get('fs_id')}: {e}")
-                continue
-
-        if not details['contents']:
-            raise DirectDownloadLinkException("ERROR: Could not get download links from TeraBox")
-
+        try:
+            _res = session.get(url, cookies=cookies)
+        except Exception as e:
+            raise DirectDownloadLinkException(f'ERROR: {e.__class__.__name__}')
+        if jsToken := findall(r'window\.jsToken.*%22(.*)%22', _res.text):
+            jsToken = jsToken[0]
+        else:
+            raise DirectDownloadLinkException('ERROR: jsToken not found!.')
+        shortUrl = parse_qs(urlparse(_res.url).query).get('surl')
+        if not shortUrl:
+            raise DirectDownloadLinkException("ERROR: Could not find surl")
+        try:
+            __fetch_links(session)
+        except Exception as e:
+            raise DirectDownloadLinkException(e)
     if len(details['contents']) == 1:
         return details['contents'][0]['url']
     return details
