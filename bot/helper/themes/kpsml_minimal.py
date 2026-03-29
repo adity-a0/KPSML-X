@@ -6,17 +6,17 @@ class KPSMLStyle:
     ST_BN1_URL = 'https://github.com/Tamilupdates/KPSML-X'
     ST_BN2_NAME = '📡 Updates'
     ST_BN2_URL = 'https://telegram.me/KPSBots'
-    ST_MSG = '''<b>░▒▓ KPSML·X ▓▒░</b>
+    ST_MSG = '''<b>◆ KPSML·X</b>
 <i>Mirror · Leech · Clone — Premium Transfer Engine</i>
 
 <blockquote>Run {help_command} to access all commands.</blockquote>'''
     ST_BOTPM = '<i>▸ Bot PM active — files delivered here.</i>'
-    ST_UNAUTH = '<b>░▒▓ ACCESS DENIED ▓▒░</b>\n\n<i>Unauthorized. Deploy your own instance of KPSML-X.</i>'
+    ST_UNAUTH = '<b>◆ ACCESS DENIED</b>\n\n<i>Unauthorized. Deploy your own instance of KPSML-X.</i>'
     OWN_TOKEN_GENERATE = '<b>⚠ Token Mismatch</b>\n\n<i>This token does not belong to you. Generate your own.</i>'
     USED_TOKEN = '<b>⚠ Token Consumed</b>\n\n<i>This token has already been used. Generate a new one.</i>'
     LOGGED_PASSWORD = '<b>▸ Session Active</b>\n\n<i>Already authenticated via password — token not required.</i>'
     ACTIVATE_BUTTON = '▸ Activate Token'
-    TOKEN_MSG = '''░▒▓ <b>LOGIN TOKEN</b> ▓▒░
+    TOKEN_MSG = '''◆ <b>LOGIN TOKEN</b>
 ├ <b>Token</b>   ·  <code>{token}</code>
 ╰ <b>Expiry</b>  ·  <i>{validity}</i>'''
     # ─────────────────────────────────────────────────────────────────────────
@@ -39,14 +39,14 @@ class KPSMLStyle:
     MICS_BT = '🔧 Misc'
     O_S_BT = '🛡 Owner'
     CLOSE_BT = '✖ Close'
-    HELP_HEADER = '''░▒▓ <b>HELP CENTRE</b> ▓▒░
+    HELP_HEADER = '''◆ <b>HELP CENTRE</b>
 
 <i>Tap any command to view usage and available flags.</i>'''
 
     # async def stats(client, message):
-    BOT_STATS = '''░▒▓ <b>RUNTIME</b> ▓▒░
+    BOT_STATS = '''◆ <b>RUNTIME</b>
 <blockquote>▸ Uptime  ·  {bot_uptime}</blockquote>
-░▒▓ <b>MEMORY</b> ▓▒░
+◆ <b>MEMORY</b>
 <blockquote expandable>  {ram_bar}  <code>{ram}%</code>
 ├ Used   ·  {ram_u}
 ├ Free   ·  {ram_f}
@@ -57,7 +57,7 @@ class KPSMLStyle:
 ├ Used   ·  {swap_u}
 ├ Free   ·  {swap_f}
 ╰ Total  ·  {swap_t}</blockquote>
-░▒▓ <b>DISK</b> ▓▒░
+◆ <b>DISK</b>
 <blockquote>  {disk_bar}  <code>{disk}%</code>
 ├ Read   ·  {disk_read}
 ├ Write  ·  {disk_write}
@@ -65,17 +65,17 @@ class KPSMLStyle:
 ├ Free   ·  {disk_f}
 ╰ Total  ·  {disk_t}</blockquote>
 '''
-    SYS_STATS = '''░▒▓ <b>SYSTEM</b> ▓▒░
+    SYS_STATS = '''◆ <b>SYSTEM</b>
 <blockquote>├ OS Uptime  ·  {os_uptime}
 ├ Version    ·  {os_version}
 ╰ Arch       ·  {os_arch}</blockquote>
-░▒▓ <b>NETWORK</b> ▓▒░
+◆ <b>NETWORK</b>
 <blockquote>├ Upload     ·  {up_data}
 ├ Download   ·  {dl_data}
 ├ Pkts Sent  ·  {pkt_sent}k
 ├ Pkts Recv  ·  {pkt_recv}k
 ╰ Total I/O  ·  {tl_data}</blockquote>
-░▒▓ <b>CPU</b> ▓▒░
+◆ <b>CPU</b>
 <blockquote>  {cpu_bar}  <code>{cpu}%</code>
 ├ Freq       ·  {cpu_freq}
 ├ Avg Load   ·  {sys_load}
@@ -83,14 +83,14 @@ class KPSMLStyle:
 ├ Total      ·  {total_core}
 ╰ Usable     ·  {cpu_use}</blockquote>
 '''
-    REPO_STATS = '''░▒▓ <b>REPOSITORY</b> ▓▒░
+    REPO_STATS = '''◆ <b>REPOSITORY</b>
 <blockquote>├ Updated    ·  {last_commit}
 ├ Current    ·  <code>{bot_version}</code>
 ├ Latest     ·  <code>{lat_version}</code>
 ╰ Changelog  ·  <i>{commit_details}</i></blockquote>
 ▸ <b>Remarks</b>  ·  <code>{remarks}</code>
 '''
-    BOT_LIMITS = '''░▒▓ <b>TRANSFER LIMITS</b> ▓▒░
+    BOT_LIMITS = '''◆ <b>TRANSFER LIMITS</b>
 <blockquote>├ Direct    ·  {DL} GB
 ├ Torrent   ·  {TL} GB
 ├ GDrive    ·  {GL} GB
@@ -99,7 +99,7 @@ class KPSMLStyle:
 ├ Mega      ·  {ML} GB
 ├ Clone     ·  {CL} GB
 ╰ Leech     ·  {LL} GB</blockquote>
-░▒▓ <b>RATE LIMITS</b> ▓▒░
+◆ <b>RATE LIMITS</b>
 <blockquote>├ Token TTL      ·  {TV}
 ├ User Time      ·  {UTI} / task
 ├ User Parallel  ·  {UT}
@@ -126,18 +126,18 @@ class KPSMLStyle:
     # ─────────────────────────────────────────────────────────────────────────
 
     # async def onDownloadStart(self): --> tasks_listener.py
-    LINKS_START = """░▒▓ <b>TASK QUEUED</b> ▓▒░
+    LINKS_START = """◆ <b>TASK QUEUED</b>
 ├ <b>Mode</b>  ·  {Mode}
 ╰ <b>By</b>    ·  {Tag}\n\n"""
-    LINKS_SOURCE = """░▒▓ <b>SOURCE</b> ▓▒░
+    LINKS_SOURCE = """◆ <b>SOURCE</b>
 ╰ <b>Added</b>  ·  {On}
-░▒▓▒░▒▓▒░▒▓▒░▒▓▒░▒▓▒░
+━━━━━━━━━━━━━━━━━━━━━
 {Source}
-░▒▓▒░▒▓▒░▒▓▒░▒▓▒░▒▓▒░\n\n"""
+━━━━━━━━━━━━━━━━━━━━━\n\n"""
 
     # async def __msg_to_reply(self): ---> pyrogramEngine.py
-    PM_START =      "░▒▓ <b>TASK STARTED</b> ▓▒░\n╰ <b>Track</b>  ·  <a href='{msg_link}'>Open in Chat</a>"
-    L_LOG_START =   "░▒▓ <b>LEECH STARTED</b> ▓▒░\n├ <b>User</b>    ·  {mention}  (<code>#{uid}</code>)\n╰ <b>Source</b>  ·  <a href='{msg_link}'>Open in Chat</a>"
+    PM_START =      "◆ <b>TASK STARTED</b>\n╰ <b>Track</b>  ·  <a href='{msg_link}'>Open in Chat</a>"
+    L_LOG_START =   "◆ <b>LEECH STARTED</b>\n├ <b>User</b>    ·  {mention}  (<code>#{uid}</code>)\n╰ <b>Source</b>  ·  <a href='{msg_link}'>Open in Chat</a>"
 
     # async def onUploadComplete(): ---> tasks_listener.py
     NAME =                '<b>◆ {Name}</b>\n│\n'
@@ -211,7 +211,7 @@ class KPSMLStyle:
     CANCEL =         '\n╰ {Cancel}\n\n'
 
     ####──── FOOTER ───────────────────────────────────────────────────────────
-    FOOTER =    '░▒▓ <b>SYSTEM</b> ▓▒░\n'
+    FOOTER =    '◆ <b>SYSTEM</b>\n'
     TASKS =     '├ <b>Tasks</b>   ·  {Tasks}\n'
     BOT_TASKS = '├ <b>Tasks</b>   ·  {Tasks}/{Ttask}  ·  <b>Free</b>  ·  {Free}\n'
     Cpu =       '├ <b>CPU</b>     ·  {cpu}%  ·  '
@@ -223,7 +223,7 @@ class KPSMLStyle:
 
     ###──── NAV BUTTONS ───────────────────────────────────────────────────────
     PREVIOUS = '◀'
-    REFRESH = '░ {Page} ░'
+    REFRESH = '· {Page} ·'
     NEXT = '▶'
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -250,21 +250,21 @@ class KPSMLStyle:
     # async def mirror_status(_, message): ----> status.py
     NO_ACTIVE_DL = '''<i>▸ No active tasks.</i>
 
-░▒▓ <b>SYSTEM</b> ▓▒░
+◆ <b>SYSTEM</b>
 ├ <b>CPU</b>   ·  {cpu}%  ·  <b>Free</b>  ·  {free} ({free_p}%)
 ╰ <b>RAM</b>   ·  {ram}   ·  <b>Up</b>    ·  {uptime}
 '''
     # ─────────────────────────────────────────────────────────────────────────
 
     # USER Setting --> user_setting.py
-    USER_SETTING = '''░▒▓ <b>USER SETTINGS</b> ▓▒░
+    USER_SETTING = '''◆ <b>USER SETTINGS</b>
 <blockquote>├ <b>Name</b>      ·  {NAME}  (<code>{ID}</code>)
 ├ <b>Username</b>  ·  {USERNAME}
 ├ <b>DC</b>        ·  {DC}
 ╰ <b>Language</b>  ·  {LANG}</blockquote>
 <i>▸ Use <b>-s</b> or <b>-set</b> to configure via argument.</i>'''
 
-    UNIVERSAL = '''░▒▓ <b>UNIVERSAL SETTINGS</b>  ·  {NAME} ▓▒░
+    UNIVERSAL = '''◆ <b>UNIVERSAL SETTINGS</b>  ·  {NAME}
 <blockquote expandable>├ <b>YT-DLP Options</b>  ·  <code>{YT}</code>
 ├ <b>Daily Tasks</b>    ·  <code>{DT}</code> / day
 ├ <b>Last Used</b>      ·  <code>{LAST_USED}</code>
@@ -273,7 +273,7 @@ class KPSMLStyle:
 ├ <b>Save Mode</b>      ·  <code>{SAVE_MODE}</code>
 ╰ <b>Bot PM</b>         ·  <code>{BOT_PM}</code></blockquote>'''
 
-    MIRROR = '''░▒▓ <b>MIRROR / CLONE</b>  ·  {NAME} ▓▒░
+    MIRROR = '''◆ <b>MIRROR / CLONE</b>  ·  {NAME}
 <blockquote expandable>├ <b>RClone Config</b>  ·  <i>{RCLONE}</i>
 ├ <b>Prefix</b>         ·  <code>{MPREFIX}</code>
 ├ <b>Suffix</b>         ·  <code>{MSUFFIX}</code>
@@ -283,7 +283,7 @@ class KPSMLStyle:
 ├ <b>User TDs</b>       ·  <i>{USERTD}</i>
 ╰ <b>Daily Mirror</b>   ·  <code>{DM}</code> / day</blockquote>'''
 
-    LEECH = '''░▒▓ <b>LEECH SETTINGS</b>  ·  {NAME} ▓▒░
+    LEECH = '''◆ <b>LEECH SETTINGS</b>  ·  {NAME}
 <blockquote expandable>├ <b>Daily Leech</b>   ·  <code>{DL}</code> / day
 ├ <b>Type</b>          ·  <i>{LTYPE}</i>
 ├ <b>Thumbnail</b>     ·  <i>{THUMB}</i>
