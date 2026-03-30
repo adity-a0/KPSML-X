@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from threading import Thread
-from base64 import b64decode
+from base64 import b64decode, b64encode
+from random import choice as random_choice
 from json import loads
 from os import path
 from uuid import uuid4
@@ -586,86 +587,107 @@ def uploadee(url):
         raise DirectDownloadLinkException("ERROR: Direct Link not found")
 
 def terabox(url):
-    if not path.isfile('terabox.txt'):
-        raise DirectDownloadLinkException("ERROR: terabox.txt not found")
-    try:
-        jar = MozillaCookieJar('terabox.txt')
-        jar.load()
-    except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
-    cookies = {}
-    for cookie in jar:
-        cookies[cookie.name] = cookie.value
-    details = {'contents':[], 'title': '', 'total_size': 0}
-    details["header"] = ' '.join(f'{key}: {value}' for key, value in cookies.items())
-
-    def __fetch_links(session, dir_='', folderPath=''):
-        params = {
-            'app_id': '250528',
-            'jsToken': jsToken,
-            'shorturl': shortUrl
-            }
-        if dir_:
-            params['dir'] = dir_
+    s_match = search(r's/([^/?&]+)', url)
+    if s_match:
+        shorturl = s_match.group(1)
+    else:
+        surl_match = search(r'surl=([^/?&]+)', url)
+        if surl_match:
+            shorturl = surl_match.group(1)
         else:
-            params['root'] = '1'
-        try:
-            _json = session.get("https://www.1024tera.com/share/list", params=params, cookies=cookies).json()
-        except Exception as e:
-            raise DirectDownloadLinkException(f'ERROR: {e.__class__.__name__}')
-        if _json['errno'] not in [0, '0']:
-            if 'errmsg' in _json:
-                raise DirectDownloadLinkException(f"ERROR: {_json['errmsg']}")
-            else:
-                raise DirectDownloadLinkException('ERROR: Something went wrong!')
+            raise DirectDownloadLinkException("ERROR: Invalid Terabox URL")
 
-        if "list" not in _json:
-            return
-        contents = _json["list"]
-        for content in contents:
-            if content['isdir'] in ['1', 1]:
-                if not folderPath:
-                    if not details['title']:
-                        details['title'] = content['server_filename']
-                        newFolderPath = path.join(details['title'])
-                    else:
-                        newFolderPath = path.join(details['title'], content['server_filename'])
-                else:
-                    newFolderPath = path.join(folderPath, content['server_filename'])
-                __fetch_links(session, content['path'], newFolderPath)
-            else:
-                if not folderPath:
-                    if not details['title']:
-                        details['title'] = content['server_filename']
-                    folderPath = details['title']
-                item = {
-                    'url': content['dlink'],
-                    'filename': content['server_filename'],
-                    'path' : path.join(folderPath),
-                }
-                if 'size' in content:
-                    size = content["size"]
-                    if isinstance(size, str) and size.isdigit():
-                        size = float(size)
-                    details['total_size'] += size
-                details['contents'].append(item)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+        "Referer": "https://terabox.hnn.workers.dev/",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "cookie": "_ga=GA1.1.1750937669.1773386038"
+    }
+
+    proxies = [
+        "plain-grass-58b2.comprehensiveaquamarine.workers.dev",
+        "royal-block-6609.ninnetta7875.workers.dev",
+        "bold-hall-f23e.7rochelle.workers.dev",
+        "winter-thunder-0360.belitawhite.workers.dev",
+        "fragrant-term-0df9.elviraeducational.workers.dev",
+        "purple-glitter-924b.miguelalocal.workers.dev"
+    ]
 
     with Session() as session:
-        try:
-            _res = session.get(url, cookies=cookies)
-        except Exception as e:
-            raise DirectDownloadLinkException(f'ERROR: {e.__class__.__name__}')
-        if jsToken := findall(r'window\.jsToken.*%22(.*)%22', _res.text):
-            jsToken = jsToken[0]
-        else:
-            raise DirectDownloadLinkException('ERROR: jsToken not found!.')
-        shortUrl = parse_qs(urlparse(_res.url).query).get('surl')
-        if not shortUrl:
-            raise DirectDownloadLinkException("ERROR: Could not find surl")
-        try:
-            __fetch_links(session)
-        except Exception as e:
-            raise DirectDownloadLinkException(e)
+        urls_to_try = [shorturl]
+        if not shorturl.startswith('1'):
+            urls_to_try.append('1' + shorturl)
+
+        data = None
+        for current_url in urls_to_try:
+            info_url = f"https://terabox.hnn.workers.dev/api/get-info-new?shorturl={current_url}&pwd="
+            try:
+                info_resp = session.get(info_url, headers=headers, timeout=(15, 60))
+                if info_resp.status_code == 200:
+                    temp_data = info_resp.json()
+                    if temp_data.get("ok") and temp_data.get("list"):
+                        data = temp_data
+                        break
+            except Exception as e:
+                LOGGER.debug(f"Terabox info fetch failed for {current_url}: {e}")
+                continue
+
+        if not data:
+            raise DirectDownloadLinkException("ERROR: Could not fetch file info from Terabox")
+
+        details = {'contents': [], 'title': '', 'total_size': 0}
+        details['header'] = f'User-Agent: {headers["User-Agent"]} Referer: {headers["Referer"]}'
+
+        for file_info in data["list"]:
+            payload = {
+                "shareid": data["shareid"],
+                "uk": data["uk"],
+                "sign": data["sign"],
+                "timestamp": data["timestamp"],
+                "fs_id": file_info["fs_id"]
+            }
+            try:
+                download_resp = session.post(
+                    "https://terabox.hnn.workers.dev/api/get-downloadp",
+                    headers=headers, json=payload, timeout=(15, 60)
+                )
+                if download_resp.status_code != 200:
+                    raise DirectDownloadLinkException("ERROR: Terabox download API failed")
+                result = download_resp.json()
+                if not result.get("ok"):
+                    raise DirectDownloadLinkException(f"ERROR: {result.get('message', 'Unknown error')}")
+                download_link = result.get("downloadLink")
+                expires = result.get("Expires")
+                key_name = result.get("KeyName")
+                signature = result.get("Signature")
+                if expires and key_name and signature and "Expires=" not in download_link:
+                    download_link += f"&Expires={expires}&KeyName={key_name}&Signature={signature}"
+                selected_proxy = random_choice(proxies)
+                encoded_url = b64encode(download_link.encode()).decode()
+                proxied_link = f"https://{selected_proxy}/?url={encoded_url}"
+                filename = file_info.get("filename", "")
+                if not details['title']:
+                    details['title'] = filename
+                item = {
+                    'url': proxied_link,
+                    'filename': filename,
+                    'path': details['title'],
+                }
+                size = int(file_info.get("size", 0))
+                details['total_size'] += size
+                details['contents'].append(item)
+            except DirectDownloadLinkException:
+                raise
+            except Exception as e:
+                raise DirectDownloadLinkException(f'ERROR: {e.__class__.__name__}') from e
+
     if len(details['contents']) == 1:
         return details['contents'][0]['url']
     return details
