@@ -77,6 +77,16 @@ class MegaAppListener(MegaListener):
                     f"Ignoring stale request error during download phase: {error}"
                 )
                 return
+            # When is_cancelled is True the stall watchdog (or a transfer error)
+            # has already decided to abort this session.  The MEGA SDK then cancels
+            # all pending in-flight requests (login, getPublicNode, fetchNodes,
+            # etc.) and fires an onRequestFinish callback for each one – typically
+            # with a "Not found" error – as part of its internal cleanup.  These
+            # are pure noise and must not be logged as errors or re-set
+            # continue_event (which would interfere with the logout handshake that
+            # follows in the proxy-rotation path).
+            if self.is_cancelled:
+                return
             self.error = error.copy()
             LOGGER.error(f'Mega onRequestFinishError: {self.error}')
             self.continue_event.set()
