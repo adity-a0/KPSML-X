@@ -77,6 +77,16 @@ class MegaAppListener(MegaListener):
                     f"Ignoring stale request error during download phase: {error}"
                 )
                 return
+            # When is_cancelled is True the stall watchdog (or a transfer error)
+            # has already decided to abort this session.  The MEGA SDK then cancels
+            # all pending in-flight requests (login, getPublicNode, fetchNodes,
+            # etc.) and fires an onRequestFinish callback for each one – typically
+            # with a "Not found" error – as part of its internal cleanup.  These
+            # are pure noise and must not be logged as errors or re-set
+            # continue_event (which would interfere with the logout handshake that
+            # follows in the proxy-rotation path).
+            if self.is_cancelled:
+                return
             self.error = error.copy()
             LOGGER.error(f'Mega onRequestFinishError: {self.error}')
             self.continue_event.set()
@@ -96,11 +106,12 @@ class MegaAppListener(MegaListener):
             self.continue_event.set()
 
     def onRequestTemporaryError(self, api, request, error: MegaError):
-        LOGGER.error(f'Mega Request error in {error}')
         # Temporary error; MEGA SDK retries the request internally.
         # onRequestFinish (above) will be called with the final outcome – do NOT
         # cancel the download or set the continue_event here.
-        pass
+        if self.is_cancelled:
+            return
+        LOGGER.warning(f'Mega Request error in {error}')
 
     def onTransferUpdate(self, api: MegaApi, transfer: MegaTransfer):
         if self.is_cancelled:
@@ -330,6 +341,26 @@ async def add_mega_download(mega_link, path, listener, name):
                     node = None
 
             if mega_listener.error is not None:
+                # Detect permanent errors that no proxy can fix (e.g. the link
+                # has been deleted or is invalid).  Retrying across all proxies
+                # would only flood the log with identical failures.
+                error_str = str(mega_listener.error).lower()
+                if 'not found' in error_str or 'not accessible' in error_str:
+                    LOGGER.error(
+                        f"Mega login/fetch failed with a permanent error ({mega_listener.error}); "
+                        f"not retrying with other proxies."
+                    )
+                    try:
+                        await sendMessage(listener.message,
+                                          f"❌ Mega link error: {mega_listener.error}. "
+                                          f"The file/folder may have been deleted or the link is invalid.")
+                    except Exception:
+                        pass
+                    await executor.do(api.logout, ())
+                    if folder_api is not None:
+                        await executor.do(folder_api.logout, ())
+                    return
+
                 # Login/fetch failed – try the next proxy if one is available.
                 if current_proxy:
                     tried_proxies.add(current_proxy)
@@ -480,12 +511,88 @@ async def add_mega_download(mega_link, path, listener, name):
                     LOGGER.warning(
                         f"MEGA transfer {reason}, rotating to new proxy: {current_proxy}"
                     )
-                    _apply_mega_proxy(api, current_proxy)
+                    # Simply changing the proxy on a live session is not enough:
+                    # the MEGA SDK keeps using the old (stalled/cancelled) TCP
+                    # connection until it reconnects, so startDownload silently
+                    # does nothing and the stall watchdog immediately fires again.
+                    # We must do a full session teardown and re-login on each
+                    # proxy rotation to guarantee a clean connection.
+                    try:
+                        await executor.do(api.logout, ())
+                    except Exception:
+                        pass
+                    api.removeListener(mega_listener)
                     if folder_api is not None:
-                        _apply_mega_proxy(folder_api, current_proxy)
-                    # Increment the generation counter so that any lingering
-                    # callbacks from the cancelled transfer are silently ignored.
-                    mega_listener._dl_gen += 1
+                        try:
+                            await executor.do(folder_api.logout, ())
+                        except Exception:
+                            pass
+                        folder_api.removeListener(mega_listener)
+                        folder_api = None
+
+                    executor = AsyncExecutor()
+                    api = MegaApi(None, None, None, 'KPSML-X')
+                    _apply_mega_proxy(api, current_proxy)
+                    mega_listener = MegaAppListener(executor.continue_event, listener)
+                    api.addListener(mega_listener)
+
+                    if MEGA_EMAIL and MEGA_PASSWORD:
+                        await executor.do(api.login, (MEGA_EMAIL, MEGA_PASSWORD))
+
+                    if mega_listener.error is None:
+                        if get_mega_link_type(mega_link) == "file":
+                            await executor.do(api.getPublicNode, (mega_link,))
+                            node = mega_listener.public_node
+                        else:
+                            folder_api = MegaApi(None, None, None, 'KPSML-X')
+                            _apply_mega_proxy(folder_api, current_proxy)
+                            folder_api.addListener(mega_listener)
+                            await executor.do(folder_api.loginToFolder, (mega_link,))
+                            if mega_listener.error is None and mega_listener.node is not None:
+                                node = await sync_to_async(folder_api.authorizeNode, mega_listener.node)
+                            else:
+                                node = None
+
+                    if mega_listener.error is not None or node is None:
+                        LOGGER.error(
+                            f"Failed to re-establish MEGA session after proxy rotation "
+                            f"(proxy={current_proxy}): {mega_listener.error}"
+                        )
+                        # Mark the listener cancelled so any delayed SDK callbacks
+                        # (login/fetchNodes completions, etc.) are silently dropped
+                        # instead of creating orphaned asyncio Tasks.
+                        mega_listener.is_cancelled = True
+                        # Clean up the new session before reporting the error.
+                        # Skipping this leaves a live MEGA SDK session with an
+                        # active listener; its delayed callbacks call async_to_sync
+                        # which creates asyncio Tasks that nobody holds a reference
+                        # to, producing "Task was destroyed but it is pending!".
+                        try:
+                            await executor.do(api.logout, ())
+                        except Exception:
+                            pass
+                        if folder_api is not None:
+                            try:
+                                await executor.do(folder_api.logout, ())
+                            except Exception:
+                                pass
+                            folder_api = None
+                        await listener.onDownloadError(
+                            "Mega download failed: could not re-establish session after proxy rotation"
+                        )
+                        return
+
+                    # Re-extract size from the new node/session (same file, but
+                    # keeps the status object consistent with the active API).
+                    size = api.getSize(node)
+
+                    # Update the status object so speed / progress stats stay live.
+                    async with download_dict_lock:
+                        if listener.uid in download_dict:
+                            download_dict[listener.uid] = MegaDownloadStatus(
+                                name, size, gid, mega_listener,
+                                listener.message, listener.upload_details
+                            )
                     continue
                 if not proxy_list:
                     if mega_listener.is_stalled:
