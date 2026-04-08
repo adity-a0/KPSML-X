@@ -68,7 +68,10 @@ async def start_cleanup():
 
 
 def clean_all():
-    aria2.remove_all(True)
+    try:
+        aria2.remove_all(True)
+    except Exception as e:
+        LOGGER.warning(f"aria2 remove_all failed (aria2c may not be running): {e}")
     get_client().torrents_delete(torrent_hashes="all")
     try:
         rmtree(DOWNLOAD_DIR)
