@@ -106,11 +106,12 @@ class MegaAppListener(MegaListener):
             self.continue_event.set()
 
     def onRequestTemporaryError(self, api, request, error: MegaError):
-        LOGGER.error(f'Mega Request error in {error}')
         # Temporary error; MEGA SDK retries the request internally.
         # onRequestFinish (above) will be called with the final outcome – do NOT
         # cancel the download or set the continue_event here.
-        pass
+        if self.is_cancelled:
+            return
+        LOGGER.warning(f'Mega Request error in {error}')
 
     def onTransferUpdate(self, api: MegaApi, transfer: MegaTransfer):
         if self.is_cancelled:
@@ -557,6 +558,25 @@ async def add_mega_download(mega_link, path, listener, name):
                             f"Failed to re-establish MEGA session after proxy rotation "
                             f"(proxy={current_proxy}): {mega_listener.error}"
                         )
+                        # Mark the listener cancelled so any delayed SDK callbacks
+                        # (login/fetchNodes completions, etc.) are silently dropped
+                        # instead of creating orphaned asyncio Tasks.
+                        mega_listener.is_cancelled = True
+                        # Clean up the new session before reporting the error.
+                        # Skipping this leaves a live MEGA SDK session with an
+                        # active listener; its delayed callbacks call async_to_sync
+                        # which creates asyncio Tasks that nobody holds a reference
+                        # to, producing "Task was destroyed but it is pending!".
+                        try:
+                            await executor.do(api.logout, ())
+                        except Exception:
+                            pass
+                        if folder_api is not None:
+                            try:
+                                await executor.do(folder_api.logout, ())
+                            except Exception:
+                                pass
+                            folder_api = None
                         await listener.onDownloadError(
                             "Mega download failed: could not re-establish session after proxy rotation"
                         )
