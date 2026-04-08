@@ -135,22 +135,31 @@ async def take_ss(video_file, duration=None, total=1, gen_ss=False):
     if duration == 0:
         duration = 3
     duration = duration - (duration * 2 / 100)
-    cmd = [bot_cache['pkgs'][2], "-hide_banner", "-loglevel", "error", "-ss", "",
-           "-i", video_file, "-vf", "thumbnail", "-frames:v", "1", des_dir]
     tstamps = {}
     thumb_sem = Semaphore(3)
-    
+
     async def extract_ss(eq_thumb):
         async with thumb_sem:
-            cmd[5] = str((duration // total) * eq_thumb)
-            tstamps[f"wz_thumb_{eq_thumb}.jpg"] = strftime("%H:%M:%S", gmtime(float(cmd[5])))
-            cmd[-1] = ospath.join(des_dir, f"wz_thumb_{eq_thumb}.jpg")
+            ss_time = str((duration // total) * eq_thumb)
+            tstamps[f"wz_thumb_{eq_thumb}.jpg"] = strftime("%H:%M:%S", gmtime(float(ss_time)))
+            out_path = ospath.join(des_dir, f"wz_thumb_{eq_thumb}.jpg")
+            cmd = [bot_cache['pkgs'][2], "-hide_banner", "-loglevel", "error",
+                   "-ss", ss_time, "-i", video_file, "-vf", "thumbnail", "-frames:v", "1", out_path]
             task = await create_subprocess_exec(*cmd, stderr=PIPE)
-            return (task, await task.wait(), eq_thumb)
-    
+            rtype = await task.wait()
+            if rtype != 0 or not await aiopath.exists(out_path):
+                err = (await task.stderr.read()).decode().strip()
+                LOGGER.warning(f'Thumbnail filter failed for no. {eq_thumb}, trying fallback. Name: {video_file} stderr: {err}')
+                cmd_fb = [bot_cache['pkgs'][2], "-hide_banner", "-loglevel", "error",
+                          "-err_detect", "ignore_err", "-fflags", "+discardcorrupt",
+                          "-ss", ss_time, "-i", video_file, "-frames:v", "1", out_path]
+                task = await create_subprocess_exec(*cmd_fb, stderr=PIPE)
+                rtype = await task.wait()
+            return (task, rtype, eq_thumb)
+
     tasks = [extract_ss(eq_thumb) for eq_thumb in range(1, total+1)]
     status = await gather(*tasks)
-    
+
     for task, rtype, eq_thumb in status:
         if rtype != 0 or not await aiopath.exists(ospath.join(des_dir, f"wz_thumb_{eq_thumb}.jpg")):
             err = (await task.stderr.read()).decode().strip()
